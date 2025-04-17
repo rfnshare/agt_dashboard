@@ -2,6 +2,8 @@ from flask import Flask, render_template, request
 import pandas as pd
 import re
 import html
+from datetime import datetime
+
 app = Flask(__name__)
 EXCEL_FILE = "DC4C0700.xlsx"
 
@@ -16,15 +18,15 @@ expected_columns = {
     "Achievements": "Achievements",
     "Blockers": "Blockers"
 }
+# Register a custom date filter
+@app.template_filter('date')
+def format_date(value, format="%Y-%m-%d"):
+    if isinstance(value, datetime):
+        return value.strftime(format)
+    return value
 
-# Function to read a specific sheet
 
-
-
-
-
-
-
+# Function to clean text
 def clean_text(text):
     """Replaces '\n' or '\\n' with actual HTML line breaks"""
     if isinstance(text, str):
@@ -33,8 +35,7 @@ def clean_text(text):
         return text.replace("\n", "<br>")
     return ""
 
-
-
+# Function to read a specific sheet
 def read_sheet(sheet_name):
     df = pd.read_excel(EXCEL_FILE, sheet_name=sheet_name)
     df = df[list(expected_columns.keys())]
@@ -46,6 +47,15 @@ def read_sheet(sheet_name):
 
     return df
 
+# Function to filter by date
+def filter_by_date(df, start_date, end_date):
+    """Filter the DataFrame based on the Week End Date"""
+    if start_date:
+        df = df[df["Week End Date"] >= start_date]
+    if end_date:
+        df = df[df["Week End Date"] <= end_date]
+    return df
+
 @app.route("/", methods=["GET", "POST"])
 def dashboard():
     xls = pd.ExcelFile(EXCEL_FILE)
@@ -53,12 +63,22 @@ def dashboard():
     selected_sheet = None
     team_members = []
     selected_member = None
+    start_date = None
+    end_date = None
     filtered_data = pd.DataFrame()
     tables = None  # HTML table string
 
     if request.method == "POST":
         selected_sheet = request.form.get("sheet")
         selected_member = request.form.get("member")
+        start_date_str = request.form.get("start_date")
+        end_date_str = request.form.get("end_date")
+
+        # Convert the date strings to datetime objects
+        if start_date_str:
+            start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+        if end_date_str:
+            end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
 
         # Load data
         if selected_sheet and selected_sheet.lower() == "all":
@@ -79,6 +99,10 @@ def dashboard():
                 data = pd.DataFrame()
 
         if not data.empty:
+            # Filter by date range if provided
+            if start_date or end_date:
+                data = filter_by_date(data, start_date, end_date)
+
             # Populate team members dropdown
             team_members = data["Member"].dropna().unique().tolist()
 
@@ -114,9 +138,10 @@ def dashboard():
         sheet_names=sheet_names,
         selected_sheet=selected_sheet,
         selected_member=selected_member,
-        team_members=team_members
+        team_members=team_members,
+        start_date=start_date,
+        end_date=end_date
     )
-
 
 
 if __name__ == "__main__":
